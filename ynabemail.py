@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3.5
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -9,6 +9,12 @@ from pynYNAB.connection import nYnabConnection
 from pynYNAB.schema.budget import Payee, Transaction
 
 import datetime
+import pickle
+import os.path
+
+import settings
+
+from collections import defaultdict
 
 
 def sendemail(from_addr, to_addr_list, cc_addr_list,
@@ -28,7 +34,7 @@ def sendemail(from_addr, to_addr_list, cc_addr_list,
 
     msg.attach(part1)
     msg.attach(part2)
- 
+
     server = smtplib.SMTP(smtpserver)
     server.starttls()
     server.login(login,password)
@@ -39,9 +45,9 @@ def sendemail(from_addr, to_addr_list, cc_addr_list,
 
 def main():
 
-    ynabUser = ''         # Example: someone@domain.com
-    ynabPassword = ''
-    ynabBudgetName = 'My Budget'            # Example:  My Budget
+    ynabUser = settings.ynab_user
+    ynabPassword = settings.ynab_password
+    ynabBudgetName = settings.ynab_budgetname
 
     print('Getting YNAB info')
 
@@ -53,6 +59,11 @@ def main():
     subs = {}
     balances = {}
 
+    if os.path.isfile('balances.p'):
+        old_balances = pickle.load( open( "balances.p", "rb" ) )
+    else:
+        old_balances = defaultdict(int)
+
     #Creates hiarichy structure of category/subcategory and only those that have the keyword in YNAB subcategory notes section
     for cat in client.budget.be_master_categories:
             cats[cat.name]=cat
@@ -60,13 +71,13 @@ def main():
             for subcat in client.budget.be_subcategories:
                     if subcat.entities_master_category_id == cat.id:
                             subs[cat.name+'_subs'][subcat.name] = subcat
-        
+
     #Gets current month budget calculations
     for b in client.budget.be_monthly_subcategory_budget_calculations:
             if b.entities_monthly_subcategory_budget_id[4:11]==(datetime.datetime.now().strftime('%Y-%m')):
                     balances[b.entities_monthly_subcategory_budget_id[12:]]=b
                     #print(b.entities_monthly_subcategory_budget_id[12:]+': ' + str(b.balance))
-        
+
     #Displays the balance for each subcategory in the subs dict
     bal_str = '<p>'
     for cat in cats:
@@ -75,12 +86,26 @@ def main():
                     bal_str += '<b>'+cat+'</b> <br>'
                     for scat in subs[cat+"_subs"]:
                             #print(cat + ' - ' + scat)
-                            bal_str += '&nbsp;&nbsp;&nbsp;&nbsp;'+ scat + ': ' + str(balances[subs[cat+"_subs"][scat].id].balance) + '<br>'
+                            bal_str += '&nbsp;&nbsp;&nbsp;&nbsp;'+ scat + ': ' + str(balances[subs[cat+"_subs"][scat].id].balance)
+                            bal_diff = balances[subs[cat+"_subs"][scat].id].balance - old_balances[subs[cat+"_subs"][scat].id].balance
+                            bal_diff = round(bal_diff,2)
+                            if bal_diff:
+                                if bal_diff > 0:
+                                    #Balance goes up
+                                    bal_str += "&nbsp;&nbsp;<span style='color:green'>$" + str(bal_diff) + "&nbsp;&uarr;</span>"
+                                else:
+                                    #Balance went down
+                                    bal_str += "&nbsp;&nbsp;<span style='color:red'>$" + str(abs(bal_diff)) + "&nbsp;&darr;</span>"
+                            bal_str += '<br>'
 
     print('Sending Email')
 
-    sendemail('example@example.com',['example@example.com'],'',
-              'YNAB Balances', bal_str, 'username', 'password', 'smtp.gmail.com:587')
+    sendemail(settings.from_address, settings.to_list, '',
+              'YNAB Balances for ' + datetime.datetime.now().strftime('%x'), bal_str, settings.gmail_user, settings.gmail_password, 'smtp.gmail.com:587')
+
+    print('Saving balances')
+
+    pickle.dump( balances, open( "balances.p", "wb" ) )
 
 if __name__ == '__main__':
     try:
