@@ -42,6 +42,10 @@ def sendemail(from_addr, to_addr_list, cc_addr_list,
     server.quit()
     return problems
 
+class Bal():
+
+    balance = 0
+
 
 def main():
 
@@ -57,12 +61,14 @@ def main():
 
     cats = {}
     subs = {}
-    balances = {}
+    balances = defaultdict(Bal)
 
     if os.path.isfile('balances.p'):
         old_balances = pickle.load( open( "balances.p", "rb" ) )
+        if type(old_balances) is not defaultdict:
+            old_balances = defaultdict(Bal, old_balances)
     else:
-        old_balances = defaultdict(int)
+        old_balances = defaultdict(Bal)
 
     #Creates hiarichy structure of category/subcategory and only those that have the keyword in YNAB subcategory notes section
     for cat in client.budget.be_master_categories:
